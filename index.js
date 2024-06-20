@@ -2,23 +2,17 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
-require('dotenv').config()
+require('dotenv').config();
+
 const app = express();
 const port = process.env.PORT || 5000;
 
-
-// middleware
-
+// Middleware
 app.use(cors());
 app.use(express.json());
 
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.1qpflqd.mongodb.net/?retryWrites=true&w=majority`;
 
-
-
-
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.1qpflqd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -29,20 +23,17 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
+    const userCollection = client.db("scholarship").collection("users");
+    const menuCollection = client.db("scholarship").collection("menu");
 
-const userCollection = client.db("scholarship").collection("users");
-// const addCollection = client.db("scholarship").collection("add");
-
-
-// JWT token creation endpoint
-app.post('/jwt', async (req, res) => {
-  const user = req.body;
-  const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
-  res.send({ token });
-});
+    // JWT token creation endpoint
+    app.post('/jwt', async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+      res.send({ token });
+    });
 
 // Middleware to verify JWT token
 const verifyToken = (req, res, next) => {
@@ -89,6 +80,9 @@ app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
   const result = await cursor.toArray();
   res.send(result);
 });
+
+
+
 
 // Route to check if user is admin
 app.get('/users/admin/:email', verifyToken, async (req, res) => {
@@ -147,26 +141,46 @@ app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
   res.send(result);
 });
 
+// 
+// menu related 
+
+
+
+app.get('/menu', async (req, res) => {
+  const result = await menuCollection.find().toArray();
+  res.send(result);
+});
+
+
+app.post('/menu', verifyToken, verifyAdmin, async (req, res) => {
+  const item = req.body;
+  const result = await menuCollection.insertOne(item);
+  res.send(result);
+});
+
+// 
 
 
 
 
-    // Send a ping to confirm a successful connection
+
+
+    // Ping MongoDB to confirm successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
-  } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
+  } catch (err) {
+    console.error('Error connecting to MongoDB:', err);
   }
 }
+
 run().catch(console.dir);
 
-
+// Root endpoint
 app.get('/', (req, res) => {
-    res.send('scholarship is running')
-})
+  res.send('scholarship is running');
+});
 
-
+// Start the server
 app.listen(port, () => {
-    console.log(`scholarship server is running ${port}`)
-})
+  console.log(`scholarship server is running on port ${port}`);
+});

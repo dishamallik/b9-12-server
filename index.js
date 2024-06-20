@@ -37,110 +37,117 @@ const userCollection = client.db("scholarship").collection("users");
 // const addCollection = client.db("scholarship").collection("add");
 
 
-// jwt related api
-
+// JWT token creation endpoint
 app.post('/jwt', async (req, res) => {
-    const user = req.body;
-    const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
-    res.send({ token });
-  })
+  const user = req.body;
+  const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+  res.send({ token });
+});
 
-
-
-
-
-// middlewares
+// Middleware to verify JWT token
 const verifyToken = (req, res, next) => {
-     console.log('verified token' ,req.headers.authorization);
-     if (!req.headers.authorization) {
-        return res.status(401).send({ message: 'unauthorized  access' });
-      }
-      const token = req.headers.authorization.split(' ')[1];
-      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-        if (err) {
-          return res.status(401).send({ message: 'unauthorized access' })
-        }
-        req.decoded = decoded;
-      next();
-    })
-
+  if (!req.headers.authorization) {
+    return res.status(401).send({ message: 'Unauthorized access' });
   }
-
-
-
-  // use verify admin after verifyToken
-  const verifyAdmin = async (req, res, next) => {
-    const email = req.decoded.email;
-    const query = { email: email };
-    const user = await userCollection.findOne(query);
-    const isAdmin = user?.role === 'admin';
-    if (!isAdmin) {
-      return res.status(403).send({ message: 'forbidden access' });
+  const token = req.headers.authorization.split(' ')[1];
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: 'Unauthorized access' });
     }
+    req.decoded = decoded; // Set decoded user information
     next();
+  });
+};
+
+// Middleware to verify if user is admin
+const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded.email;
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  const isAdmin = user?.role === 'admin';
+  if (!isAdmin) {
+    return res.status(403).send({ message: 'Forbidden access' });
   }
+  next();
+};
 
+// Middleware to verify if user is moderator
+const verifyModerator = async (req, res, next) => {
+  const email = req.decoded.email;
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  const isModerator = user?.role === 'moderator';
+  if (!isModerator) {
+    return res.status(403).send({ message: 'Forbidden access' });
+  }
+  next();
+};
 
+// Route to get all users (admin access required)
+app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+  const cursor = userCollection.find();
+  const result = await cursor.toArray();
+  res.send(result);
+});
 
-// user related api
-app.get('/users',verifyToken, verifyAdmin, async(req, res) =>{
-    console.log(req.headers);
-    const cursor = userCollection.find();
-    const result = await cursor.toArray();
-    res.send(result);
-})
-// 
-// admin
+// Route to check if user is admin
+app.get('/users/admin/:email', verifyToken, async (req, res) => {
+  const email = req.params.email;
+  if (email !== req.decoded.email) {
+    return res.status(403).send({ message: 'Forbidden access' });
+  }
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  const isAdmin = user?.role === 'admin';
+  res.send({ admin: isAdmin });
+});
 
-app.get('/users/admin/:email',verifyToken , async (req, res) => {
-    const email = req.params.email;
-    if (email !== req.decoded.email) {
-      return res.status(403).send({ message: 'forbidden access' })
+// Route to create a new user
+app.post('/users', async (req, res) => {
+  const user = req.body;
+  const query = { email: user.email };
+  const existingUser = await userCollection.findOne(query);
+  if (existingUser) {
+    return res.send({ message: 'User already exists', insertedId: null });
+  }
+  const result = await userCollection.insertOne(user);
+  res.send(result);
+});
+
+// Route to promote user to moderator
+app.patch('/users/moderator/:id', verifyToken, verifyAdmin, async (req, res) => {
+  const id = req.params.id;
+  const filter = { _id: new ObjectId(id) };
+  const updatedDoc = {
+    $set: {
+      role: 'moderator'
     }
+  };
+  const result = await userCollection.updateOne(filter, updatedDoc);
+  res.send(result);
+});
 
-    const query = { email: email };
-    const user = await userCollection.findOne(query);
-    let admin = false;
-    if (user) {
-      admin = user?.role === 'admin';
-    }
-    res.send({ admin });
-  })
+// Route to check if user is moderator
+app.get('/users/moderator/:email', verifyToken, async (req, res) => {
+  const email = req.params.email;
+  if (email !== req.decoded.email) {
+    return res.status(403).send({ message: 'Forbidden access' });
+  }
+  const query = { email: email };
+  const user = await userCollection.findOne(query);
+  const isModerator = user?.role === 'moderator';
+  res.send({ moderator: isModerator });
+});
 
-
-// 
-// 
-
-app.post('/users' , async (req, res) =>{
-    const user = req.body;
-    const query = {email: user.email}
-    const existingUser = await userCollection.findOne(query);
-    if(existingUser){
-        return res.send({Message: 'user already exists', insertedId: null})
-    }
-    const result = await userCollection.insertOne(user);
-    res.send(result);
-})
-
-app.patch('/users/admin/:id', verifyToken, verifyAdmin , async (req, res) => {
-    const id = req.params.id;
-    const filter = { _id: new ObjectId(id) };
-    const updatedDoc = {
-      $set: {
-        role: 'admin'
-      }
-    }
-    const result = await userCollection.updateOne(filter, updatedDoc);
-    res.send(result);
-  })
+// Route to delete user (admin access required)
+app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await userCollection.deleteOne(query);
+  res.send(result);
+});
 
 
-app.delete('/users/:id',verifyToken, verifyAdmin ,  async (req, res) => {
-    const id = req.params.id;
-    const query = { _id: new ObjectId(id) }
-    const result = await userCollection.deleteOne(query);
-    res.send(result);
-  })
 
 
 

@@ -7,7 +7,6 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
@@ -28,144 +27,103 @@ async function run() {
     const userCollection = client.db("scholarship").collection("users");
     const menuCollection = client.db("scholarship").collection("menu");
 
-    // JWT token creation endpoint
     app.post('/jwt', async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
       res.send({ token });
     });
 
-// Middleware to verify JWT token
-const verifyToken = (req, res, next) => {
-  if (!req.headers.authorization) {
-    return res.status(401).send({ message: 'Unauthorized access' });
-  }
-  const token = req.headers.authorization.split(' ')[1];
-  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({ message: 'Unauthorized access' });
-    }
-    req.decoded = decoded; // Set decoded user information
-    next();
-  });
-};
+    const verifyToken = (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(401).send({ message: 'Unauthorized access' });
+      }
+      const token = authHeader.split(' ')[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: 'Unauthorized access' });
+        }
+        req.decoded = decoded;
+        next();
+      });
+    };
 
-// Middleware to verify if user is admin
-const verifyAdmin = async (req, res, next) => {
-  const email = req.decoded.email;
-  const query = { email: email };
-  const user = await userCollection.findOne(query);
-  const isAdmin = user?.role === 'admin';
-  if (!isAdmin) {
-    return res.status(403).send({ message: 'Forbidden access' });
-  }
-  next();
-};
+    const verifyRole = async (req, res, next, role) => {
+      const email = req.decoded.email;
+      const user = await userCollection.findOne({ email });
+      if (user?.role !== role) {
+        return res.status(403).send({ message: 'Forbidden access' });
+      }
+      next();
+    };
 
-// Middleware to verify if user is moderator
-const verifyModerator = async (req, res, next) => {
-  const email = req.decoded.email;
-  const query = { email: email };
-  const user = await userCollection.findOne(query);
-  const isModerator = user?.role === 'moderator';
-  if (!isModerator) {
-    return res.status(403).send({ message: 'Forbidden access' });
-  }
-  next();
-};
+    const verifyAdmin = (req, res, next) => {
+      verifyRole(req, res, next, 'admin');
+    };
 
-// Route to get all users (admin access required)
-app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
-  const cursor = userCollection.find();
-  const result = await cursor.toArray();
-  res.send(result);
-});
+    const verifyModerator = (req, res, next) => {
+      verifyRole(req, res, next, 'moderator');
+    };
 
+    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+      const users = await userCollection.find().toArray();
+      res.send(users);
+    });
 
+    app.post('/users', async (req, res) => {
+      const user = req.body;
+      const existingUser = await userCollection.findOne({ email: user.email });
+      if (existingUser) {
+        return res.send({ message: 'User already exists', insertedId: null });
+      }
+      const result = await userCollection.insertOne(user);
+      res.send(result);
+    });
 
+    app.patch('/users/moderator/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const result = await userCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { role: 'moderator' } }
+      );
+      res.send(result);
+    });
 
-// Route to check if user is admin
-app.get('/users/admin/:email', verifyToken, async (req, res) => {
-  const email = req.params.email;
-  if (email !== req.decoded.email) {
-    return res.status(403).send({ message: 'Forbidden access' });
-  }
-  const query = { email: email };
-  const user = await userCollection.findOne(query);
-  const isAdmin = user?.role === 'admin';
-  res.send({ admin: isAdmin });
-});
+    app.get('/users/admin/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: 'Forbidden access' });
+      }
+      const user = await userCollection.findOne({ email });
+      res.send({ admin: user?.role === 'admin' });
+    });
 
-// Route to create a new user
-app.post('/users', async (req, res) => {
-  const user = req.body;
-  const query = { email: user.email };
-  const existingUser = await userCollection.findOne(query);
-  if (existingUser) {
-    return res.send({ message: 'User already exists', insertedId: null });
-  }
-  const result = await userCollection.insertOne(user);
-  res.send(result);
-});
+    app.get('/users/moderator/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: 'Forbidden access' });
+      }
+      const user = await userCollection.findOne({ email });
+      res.send({ moderator: user?.role === 'moderator' });
+    });
 
-// Route to promote user to moderator
-app.patch('/users/moderator/:id', verifyToken, verifyAdmin, async (req, res) => {
-  const id = req.params.id;
-  const filter = { _id: new ObjectId(id) };
-  const updatedDoc = {
-    $set: {
-      role: 'moderator'
-    }
-  };
-  const result = await userCollection.updateOne(filter, updatedDoc);
-  res.send(result);
-});
+    app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
+      res.send(result);
+    });
 
-// Route to check if user is moderator
-app.get('/users/moderator/:email', verifyToken, async (req, res) => {
-  const email = req.params.email;
-  if (email !== req.decoded.email) {
-    return res.status(403).send({ message: 'Forbidden access' });
-  }
-  const query = { email: email };
-  const user = await userCollection.findOne(query);
-  const isModerator = user?.role === 'moderator';
-  res.send({ moderator: isModerator });
-});
+    app.get('/menu', async (req, res) => {
+      const result = await menuCollection.find().toArray();
+      res.send(result);
+    });
 
-// Route to delete user (admin access required)
-app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  const result = await userCollection.deleteOne(query);
-  res.send(result);
-});
+    app.post('/menu', verifyToken, verifyModerator, async (req, res) => {
+      const item = req.body;
+      const result = await menuCollection.insertOne(item);
+      res.send(result);
+    });
 
-// 
-// menu related 
-
-
-
-app.get('/menu', async (req, res) => {
-  const result = await menuCollection.find().toArray();
-  res.send(result);
-});
-
-
-app.post('/menu', verifyToken, verifyAdmin, async (req, res) => {
-  const item = req.body;
-  const result = await menuCollection.insertOne(item);
-  res.send(result);
-});
-
-// 
-
-
-
-
-
-
-    // Ping MongoDB to confirm successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (err) {
@@ -175,12 +133,10 @@ app.post('/menu', verifyToken, verifyAdmin, async (req, res) => {
 
 run().catch(console.dir);
 
-// Root endpoint
 app.get('/', (req, res) => {
   res.send('scholarship is running');
 });
 
-// Start the server
 app.listen(port, () => {
   console.log(`scholarship server is running on port ${port}`);
 });

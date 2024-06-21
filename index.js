@@ -27,6 +27,7 @@ async function run() {
 
     const userCollection = client.db("scholarship").collection("users");
     const menuCollection = client.db("scholarship").collection("menu");
+    const paymentCollection = client.db("scholarship").collection("payments");
 
     // JWT Token creation
     app.post('/jwt', async (req, res) => {
@@ -92,6 +93,18 @@ async function run() {
       res.send(result);
     });
 
+
+    app.patch('/users/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const result = await userCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { role: 'admin' } }
+      );
+      res.send(result);
+    });
+
+
+    
     app.get('/users/admin/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       if (email !== req.decoded.email) {
@@ -170,6 +183,22 @@ async function run() {
         res.status(500).send({ error: 'Error creating payment intent' });
       }
     });
+
+
+
+// 
+app.post('/payments', async (req, res) => {
+  const payment = req.body;
+  const paymentResult = await paymentCollection.insertOne(payment);
+
+  res.send( paymentResult );
+
+})
+
+
+
+
+
 
     await client.db("scholarship").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");

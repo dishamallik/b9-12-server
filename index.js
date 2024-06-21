@@ -3,6 +3,7 @@ const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -10,7 +11,7 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.1qpflqd.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.1qpflqd.mongodb.net`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -27,6 +28,7 @@ async function run() {
     const userCollection = client.db("scholarship").collection("users");
     const menuCollection = client.db("scholarship").collection("menu");
 
+    // JWT Token creation
     app.post('/jwt', async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
@@ -65,6 +67,7 @@ async function run() {
       verifyRole(req, res, next, 'moderator');
     };
 
+    // User routes
     app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
@@ -113,18 +116,18 @@ async function run() {
       res.send(result);
     });
 
+    // Menu routes
     app.get('/menu', async (req, res) => {
       const result = await menuCollection.find().toArray();
       res.send(result);
     });
 
-
     app.get('/menu/:id', async (req, res) => {
       const id = req.params.id;
-      const query = { _id: new ObjectId(id) }
+      const query = { _id: new ObjectId(id) };
       const result = await menuCollection.findOne(query);
       res.send(result);
-    })
+    });
 
     app.post('/menu', verifyToken, verifyAdmin, async (req, res) => {
       const item = req.body;
@@ -132,26 +135,43 @@ async function run() {
       res.send(result);
     });
 
-   
-
-    app.post('/menu', verifyToken,  async (req, res) => {
-      const item = req.body;
-      const result = await menuCollection.insertOne(item);
+    app.delete('/menu/:id', verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await menuCollection.deleteOne(query);
       res.send(result);
     });
 
-    app.delete('/menu/:id', verifyToken,  async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) }
-      const result = await menuCollection.deleteOne(query);
-      res.send(result);
-    })
+    // Payment intent creation
+    app.post('/create-payment-intent', async (req, res) => {
+      const { price } = req.body;
 
+      if (!price || isNaN(price)) {
+        res.status(400).send({ error: 'Invalid price provided' });
+        return;
+      }
 
+      const amount = Math.round(price * 100);
 
+      console.log(`Creating payment intent for amount: ${amount} cents`);
 
-    
-    await client.db("admin").command({ ping: 1 });
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amount,
+          currency: 'usd',
+          payment_method_types: ['card']
+        });
+
+        res.send({
+          clientSecret: paymentIntent.client_secret
+        });
+      } catch (error) {
+        console.error('Error creating payment intent:', error);
+        res.status(500).send({ error: 'Error creating payment intent' });
+      }
+    });
+
+    await client.db("scholarship").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (err) {
     console.error('Error connecting to MongoDB:', err);
@@ -161,9 +181,9 @@ async function run() {
 run().catch(console.dir);
 
 app.get('/', (req, res) => {
-  res.send('scholarship is running');
+  res.send('Scholarship server is running');
 });
 
 app.listen(port, () => {
-  console.log(`scholarship server is running on port ${port}`);
+  console.log(`Scholarship server is running on port ${port}`);
 });

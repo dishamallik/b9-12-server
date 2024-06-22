@@ -195,6 +195,9 @@ async function run() {
       res.send(result);
     });
 
+
+
+
     // New endpoint for application submission
     app.post('/apply-scholarship', async (req, res) => {
       const application = req.body;
@@ -207,6 +210,20 @@ async function run() {
       const paymentResult = await paymentCollection.insertOne(payment);
       res.send(paymentResult);
     });
+
+// 
+// 
+
+    app.get('/applications', async (req, res) => {
+      const applications = await applicationCollection.find().toArray();
+      res.send(applications);
+  });
+  
+
+
+
+
+
 
     // await client.db("scholarship").command({ ping: 1 });
   } catch (err) {

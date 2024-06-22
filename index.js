@@ -8,8 +8,6 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const port = process.env.PORT || 5000;
 
-
-
 app.use(
   cors({
     origin: [
@@ -17,10 +15,8 @@ app.use(
       "https://b9-12-client.web.app",
       "https://b9-12-client.firebaseapp.com",
     ],
-    
   })
 );
-
 
 app.use(cors());
 app.use(express.json());
@@ -35,26 +31,13 @@ const client = new MongoClient(uri, {
   }
 });
 
-
-
-// const cookieOptions = {
-//   httpOnly: true,
-//   secure: process.env.NODE_ENV === "production",
-//   sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-// };
-
-
-
-
 async function run() {
   try {
-    // await client.connect();
-
     const userCollection = client.db("scholarship").collection("users");
     const menuCollection = client.db("scholarship").collection("menu");
     const paymentCollection = client.db("scholarship").collection("payments");
+    const applicationCollection = client.db("scholarship").collection("applications"); // New collection
 
-    // JWT Token creation
     app.post('/jwt', async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
@@ -93,7 +76,6 @@ async function run() {
       verifyRole(req, res, next, 'moderator');
     };
 
-    // User routes
     app.get('/users', verifyToken, async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
@@ -118,7 +100,6 @@ async function run() {
       res.send(result);
     });
 
-
     app.patch('/users/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const result = await userCollection.updateOne(
@@ -128,8 +109,6 @@ async function run() {
       res.send(result);
     });
 
-
-    
     app.get('/users/admin/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       if (email !== req.decoded.email) {
@@ -154,7 +133,6 @@ async function run() {
       res.send(result);
     });
 
-    // Menu routes
     app.get('/menu', async (req, res) => {
       const result = await menuCollection.find().toArray();
       res.send(result);
@@ -167,7 +145,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post('/menu', verifyToken,  async (req, res) => {
+    app.post('/menu', verifyToken, async (req, res) => {
       const item = req.body;
       const result = await menuCollection.insertOne(item);
       res.send(result);
@@ -180,7 +158,6 @@ async function run() {
       res.send(result);
     });
 
-    // Payment intent creation
     app.post('/create-payment-intent', async (req, res) => {
       const { price } = req.body;
 
@@ -216,25 +193,22 @@ async function run() {
       }
       const result = await paymentCollection.find(query).toArray();
       res.send(result);
-    })
+    });
 
+    // New endpoint for application submission
+    app.post('/apply-scholarship', async (req, res) => {
+      const application = req.body;
+      const result = await applicationCollection.insertOne(application);
+      res.send(result);
+    });
 
-// 
-app.post('/payments', async (req, res) => {
-  const payment = req.body;
-  const paymentResult = await paymentCollection.insertOne(payment);
-
-  res.send( paymentResult );
-
-})
-
-
-
-
-
+    app.post('/payments', async (req, res) => {
+      const payment = req.body;
+      const paymentResult = await paymentCollection.insertOne(payment);
+      res.send(paymentResult);
+    });
 
     // await client.db("scholarship").command({ ping: 1 });
-    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (err) {
     console.error('Error connecting to MongoDB:', err);
   }

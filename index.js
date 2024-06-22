@@ -8,6 +8,20 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const port = process.env.PORT || 5000;
 
+
+
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://b9-12-client.web.app",
+      "https://b9-12-client.firebaseapp.com",
+    ],
+    
+  })
+);
+
+
 app.use(cors());
 app.use(express.json());
 
@@ -21,9 +35,20 @@ const client = new MongoClient(uri, {
   }
 });
 
+
+
+// const cookieOptions = {
+//   httpOnly: true,
+//   secure: process.env.NODE_ENV === "production",
+//   sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+// };
+
+
+
+
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const userCollection = client.db("scholarship").collection("users");
     const menuCollection = client.db("scholarship").collection("menu");
@@ -69,7 +94,7 @@ async function run() {
     };
 
     // User routes
-    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+    app.get('/users', verifyToken, async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
     });
@@ -142,7 +167,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post('/menu', verifyToken, verifyAdmin, async (req, res) => {
+    app.post('/menu', verifyToken,  async (req, res) => {
       const item = req.body;
       const result = await menuCollection.insertOne(item);
       res.send(result);
@@ -208,8 +233,8 @@ app.post('/payments', async (req, res) => {
 
 
 
-    await client.db("scholarship").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.db("scholarship").command({ ping: 1 });
+    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (err) {
     console.error('Error connecting to MongoDB:', err);
   }
